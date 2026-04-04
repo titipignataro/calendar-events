@@ -1,21 +1,23 @@
 "use client"
 
-import { useEffect, useState, useCallback, useMemo } from "react"
+import { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
-import { LogOut, Calendar as CalendarIcon, Plus, ChevronLeft, ChevronRight, Moon, Sun, User as UserIcon } from "lucide-react"
+import {
+  LogOut,
+  Calendar as CalendarIcon,
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  Moon,
+  Sun,
+  User as UserIcon,
+  Trash2,
+  X,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,23 +29,20 @@ import {
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
 
-import { Calendar, dateFnsLocalizer, View } from "react-big-calendar"
-import { format, parse, startOfWeek, getDay, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays } from "date-fns"
-import { ptBR } from "date-fns/locale/pt-BR"
+import { Calendar, momentLocalizer, View } from "react-big-calendar"
+import moment from "moment-timezone"
+import "moment/locale/pt-br"
 import "react-big-calendar/lib/css/react-big-calendar.css"
 import "./calendar-custom.css"
 
-const locales = {
-  "pt-BR": ptBR,
-}
+// ─── Localizer ────────────────────────────────────────────────────────────────
 
-const localizer = dateFnsLocalizer({
-  format,
-  parse,
-  startOfWeek,
-  getDay,
-  locales,
-})
+moment.locale("pt-br")
+moment.tz.setDefault("America/Sao_Paulo")
+
+const localizer = momentLocalizer(moment)
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type CalendarEvent = {
   id: string
@@ -53,29 +52,258 @@ type CalendarEvent = {
   allDay?: boolean
 }
 
+type FormState = {
+  title: string
+  start: string
+  end: string
+}
+
+const EMPTY_FORM: FormState = { title: "", start: "", end: "" }
+
+const VIEWS: { key: View; label: string }[] = [
+  { key: "month", label: "Mês" },
+  { key: "week", label: "Semana" },
+  { key: "day", label: "Dia" },
+  { key: "agenda", label: "Agenda" },
+]
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function isAllDayEvent(start: Date, end: Date): boolean {
+  const diffH = (end.getTime() - start.getTime()) / 3_600_000
+  return (
+    diffH >= 24 &&
+    diffH % 24 === 0 &&
+    start.getHours() === 0 &&
+    start.getMinutes() === 0 &&
+    end.getHours() === 0 &&
+    end.getMinutes() === 0
+  )
+}
+
+function mapDbEvent(item: any): CalendarEvent {
+  const start = moment(item.start_time).toDate()
+  const end = moment(item.end_time).toDate()
+  return { id: item.id, title: item.title, start, end, allDay: isAllDayEvent(start, end) }
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function Spinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-6 h-6 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+        <p className="text-xs text-muted-foreground tracking-widest uppercase">Carregando</p>
+      </div>
+    </div>
+  )
+}
+
+// Slide-over lateral para criar / editar evento
+function EventSlideOver({
+  open,
+  form,
+  selectedEventId,
+  isSubmitting,
+  isDeleting,
+  onClose,
+  onChange,
+  onSubmit,
+  onDelete,
+}: {
+  open: boolean
+  form: FormState
+  selectedEventId: string | null
+  isSubmitting: boolean
+  isDeleting: boolean
+  onClose: () => void
+  onChange: (field: keyof FormState, value: string) => void
+  onSubmit: (e: React.FormEvent) => void
+  onDelete: () => void
+}) {
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // Fechar ao clicar fora
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        onClose()
+      }
+    }
+    // Delay para não capturar o clique que abriu
+    const id = setTimeout(() => document.addEventListener("mousedown", handler), 50)
+    return () => {
+      clearTimeout(id)
+      document.removeEventListener("mousedown", handler)
+    }
+  }, [open, onClose])
+
+  // Fechar com Escape
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
+    document.addEventListener("keydown", handler)
+    return () => document.removeEventListener("keydown", handler)
+  }, [open, onClose])
+
+  return (
+    <>
+      {/* Overlay */}
+      <div
+        className={`fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px] transition-opacity duration-300 ${
+          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+      />
+
+      {/* Painel */}
+      <div
+        ref={panelRef}
+        className={`fixed top-0 right-0 h-full w-[360px] z-50 bg-background border-l border-border/50 shadow-2xl flex flex-col transition-transform duration-300 ease-out ${
+          open ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        {/* Cabeçalho do painel */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-border/40">
+          <div>
+            <h2 className="text-sm font-semibold tracking-tight">
+              {selectedEventId ? "Editar evento" : "Novo evento"}
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {selectedEventId ? "Altere os dados abaixo" : "Preencha os dados do compromisso"}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Formulário */}
+        <form onSubmit={onSubmit} className="flex flex-col flex-1 overflow-y-auto">
+          <div className="px-6 py-6 space-y-5 flex-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="title" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Título
+              </Label>
+              <Input
+                id="title"
+                placeholder="Ex: Reunião de equipe"
+                value={form.title}
+                onChange={(e) => onChange("title", e.target.value)}
+                autoFocus
+                required
+                className="h-10 text-sm bg-secondary/20 border-border/40 focus:border-primary/50 focus:ring-0 rounded-lg"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="start" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Início
+              </Label>
+              <Input
+                id="start"
+                type="datetime-local"
+                value={form.start}
+                onChange={(e) => onChange("start", e.target.value)}
+                required
+                className="h-10 text-sm bg-secondary/20 border-border/40 focus:border-primary/50 focus:ring-0 rounded-lg"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="end" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Fim
+              </Label>
+              <Input
+                id="end"
+                type="datetime-local"
+                value={form.end}
+                onChange={(e) => onChange("end", e.target.value)}
+                required
+                className="h-10 text-sm bg-secondary/20 border-border/40 focus:border-primary/50 focus:ring-0 rounded-lg"
+              />
+              <p className="text-[11px] text-muted-foreground/60">
+                Para evento de dia inteiro, selecione 00:00 em ambos e em dias diferentes
+              </p>
+            </div>
+          </div>
+
+          {/* Rodapé do painel */}
+          <div className="px-6 py-5 border-t border-border/40 space-y-2">
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full h-10 text-sm font-medium rounded-lg"
+            >
+              {isSubmitting ? "Salvando..." : selectedEventId ? "Salvar alterações" : "Criar evento"}
+            </Button>
+
+            {selectedEventId && (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={isDeleting}
+                onClick={onDelete}
+                className="w-full h-10 text-sm text-destructive hover:text-destructive hover:bg-destructive/8 rounded-lg gap-2"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {isDeleting ? "Excluindo..." : "Excluir evento"}
+              </Button>
+            )}
+          </div>
+        </form>
+      </div>
+    </>
+  )
+}
+
+// Custom event card renderizado dentro do calendário
+const CustomEvent = ({ event }: { event: CalendarEvent }) => {
+  const diffH = (event.end.getTime() - event.start.getTime()) / 3_600_000
+  const diffDays = Math.ceil(diffH / 24)
+
+  let sub = ""
+  if (event.allDay || diffH >= 24) {
+    sub = diffDays > 1
+      ? `${format(event.start, "d/MM")} – ${format(event.end, "d/MM")}`
+      : "Dia inteiro"
+  }
+
+  return (
+    <div className="flex flex-col h-full text-xs overflow-hidden leading-tight p-0.5">
+      <span className="font-semibold truncate">{event.title}</span>
+      {sub && <span className="opacity-75 truncate text-[10px] mt-0.5">{sub}</span>}
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function CalendarPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [events, setEvents] = useState<CalendarEvent[]>([])
 
-  // Modal 
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [newEventTitle, setNewEventTitle] = useState("")
-  const [newEventStart, setNewEventStart] = useState("")
-  const [newEventEnd, setNewEventEnd] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  
-  // Edit & Delete States
+  // Slide-over
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  // Calendar Control States
+  // Calendário
   const [currentDate, setCurrentDate] = useState(new Date())
   const [currentView, setCurrentView] = useState<View>("week")
 
-  // User States
+  // Usuário
   const { theme, setTheme } = useTheme()
   const [userEmail, setUserEmail] = useState("")
+
+  // ── Fetch ──────────────────────────────────────────────────────────────────
 
   const fetchEvents = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -88,63 +316,39 @@ export default function CalendarPage() {
       .order("start_time", { ascending: true })
 
     if (error) {
-      console.error("Erro ao carregar eventos:", error)
-      toast.error("Erro ao carregar os eventos")
+      toast.error("Erro ao carregar eventos")
       return
     }
 
-    // Corrigir problema de fuso horário
-    const mapped = data.map((item: any) => {
-      const startDate = new Date(item.start_time)
-      const endDate = new Date(item.end_time)
-
-      // Verificar se é evento de dia inteiro (diferença de 24h ou mais)
-      const diffInHours = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60)
-      const isAllDay = diffInHours >= 24 &&
-        startDate.getHours() === 0 &&
-        startDate.getMinutes() === 0 &&
-        endDate.getHours() === 0 &&
-        endDate.getMinutes() === 0
-
-      return {
-        id: item.id,
-        title: item.title,
-        start: startDate,
-        end: endDate,
-        allDay: isAllDay
-      }
-    })
-
-    setEvents(mapped)
+    setEvents(data.map(mapDbEvent))
   }, [])
 
   useEffect(() => {
     let mounted = true
 
-    const checkUser = async () => {
+    const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session && mounted) {
-        router.push("/login")
-      } else if (session && mounted) {
-        setUserEmail(session.user.email || "")
+      if (!session) {
+        if (mounted) router.push("/login")
+        return
+      }
+      if (mounted) {
+        setUserEmail(session.user.email ?? "")
         setLoading(false)
         await fetchEvents()
       }
     }
 
-    checkUser()
+    init()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!session && mounted) {
-          router.push("/login")
-        } else if (session && mounted) {
-          setUserEmail(session.user.email || "")
-          setLoading(false)
-          await fetchEvents()
-        }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_, session) => {
+      if (!session && mounted) return router.push("/login")
+      if (session && mounted) {
+        setUserEmail(session.user.email ?? "")
+        setLoading(false)
+        fetchEvents()
       }
-    )
+    })
 
     return () => {
       mounted = false
@@ -152,440 +356,326 @@ export default function CalendarPage() {
     }
   }, [router, fetchEvents])
 
-  const handleLogout = async () => {
+  // ── Handlers ───────────────────────────────────────────────────────────────
+
+  const openNewEvent = useCallback(() => {
+    setSelectedEventId(null)
+    setForm(EMPTY_FORM)
+    setPanelOpen(true)
+  }, [])
+
+  const openEditEvent = useCallback((event: CalendarEvent) => {
+    setSelectedEventId(event.id)
+    setForm({
+      title: event.title,
+      start: moment(event.start).format("YYYY-MM-DDTHH:mm"),
+      end: moment(event.end).format("YYYY-MM-DDTHH:mm"),
+    })
+    setPanelOpen(true)
+  }, [])
+
+  const closePanel = useCallback(() => {
+    setPanelOpen(false)
+    // Resetar após animação
+    setTimeout(() => {
+      setSelectedEventId(null)
+      setForm(EMPTY_FORM)
+    }, 300)
+  }, [])
+
+  const handleFormChange = useCallback((field: keyof FormState, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }))
+  }, [])
+
+  const handleLogout = useCallback(async () => {
     setLoading(true)
     await supabase.auth.signOut()
-  }
-
-  const resetForm = useCallback(() => {
-    setNewEventTitle("")
-    setNewEventStart("")
-    setNewEventEnd("")
-    setSelectedEventId(null)
   }, [])
 
-  const handleSelectEvent = useCallback((event: CalendarEvent) => {
-    setSelectedEventId(event.id)
-    setNewEventTitle(event.title)
-    
-    // Formatar para exibição no input datetime-local
-    setNewEventStart(format(event.start, "yyyy-MM-dd'T'HH:mm"))
-    setNewEventEnd(format(event.end, "yyyy-MM-dd'T'HH:mm"))
-    
-    setIsModalOpen(true)
-  }, [])
-
-  const handleDeleteEvent = async () => {
+  const handleDeleteEvent = useCallback(async () => {
     if (!selectedEventId) return
     setIsDeleting(true)
-
     try {
       const { error } = await supabase.from("events").delete().eq("id", selectedEventId)
       if (error) throw error
-
       setEvents((prev) => prev.filter((e) => e.id !== selectedEventId))
-      toast.success("Evento excluído com sucesso!")
-      setIsModalOpen(false)
-      resetForm()
+      toast.success("Evento excluído")
+      closePanel()
     } catch (err: any) {
-      console.error(err)
-      toast.error(err.message || "Erro ao excluir evento.")
+      toast.error(err.message ?? "Erro ao excluir evento")
     } finally {
       setIsDeleting(false)
     }
-  }
+  }, [selectedEventId, closePanel])
 
-  const handleCreateEvent = async (e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
 
     try {
-      if (!newEventTitle.trim()) {
-        throw new Error("Por favor, informe o título do evento")
-      }
+      const { title, start: startStr, end: endStr } = form
 
-      if (!newEventStart) {
-        throw new Error("Por favor, informe a data e hora de início")
-      }
+      if (!title.trim()) throw new Error("Informe o título do evento")
+      if (!startStr) throw new Error("Informe a data de início")
+      if (!endStr) throw new Error("Informe a data de fim")
 
-      if (!newEventEnd) {
-        throw new Error("Por favor, informe a data e hora de término")
-      }
+      const startDate = moment(startStr).toDate()
+      const endDate = moment(endStr).toDate()
 
-      let startDate = new Date(newEventStart)
-      let endDate = new Date(newEventEnd)
-
-      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-        throw new Error("Datas inválidas")
-      }
-
-      // Corrigir problema de fuso horário para eventos de múltiplos dias
-      // Se o usuário selecionou apenas data sem hora, considerar como início do dia
-      if (newEventStart.length === 10) {
-        startDate = new Date(`${newEventStart}T00:00:00`)
-      }
-
-      if (newEventEnd.length === 10) {
-        endDate = new Date(`${newEventEnd}T23:59:59`)
-      }
-
-      if (startDate >= endDate) {
-        throw new Error("O horário de término deve ser posterior ao de início")
-      }
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) throw new Error("Datas inválidas")
+      if (startDate >= endDate) throw new Error("O fim deve ser posterior ao início")
 
       const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) throw new Error("Usuário não autenticado")
 
-      if (userError || !user) {
-        throw new Error("Usuário não autenticado. Por favor, faça login novamente.")
-      }
-
-      // Inserir ou Atualizar no banco
-      let dataResult, errorResult
+      let result: any, err: any
 
       if (selectedEventId) {
-        const { data, error } = await supabase
+        ;({ data: result, error: err } = await supabase
           .from("events")
           .update({
-            title: newEventTitle.trim(),
+            title: title.trim(),
             start_time: startDate.toISOString(),
-            end_time: endDate.toISOString()
+            end_time: endDate.toISOString(),
           })
           .eq("id", selectedEventId)
           .select()
-          .single()
-        dataResult = data
-        errorResult = error
+          .single())
       } else {
-        const { data, error } = await supabase
+        ;({ data: result, error: err } = await supabase
           .from("events")
-          .insert({
-            title: newEventTitle.trim(),
-            start_time: startDate.toISOString(),
-            end_time: endDate.toISOString(),
-            user_id: user.id
-          })
+          .insert({ title: title.trim(), start_time: startDate.toISOString(), end_time: endDate.toISOString(), user_id: user.id })
           .select()
-          .single()
-        dataResult = data
-        errorResult = error
+          .single())
       }
 
-      if (errorResult) throw errorResult
-      if (!dataResult) throw new Error("Nenhum dado retornado após operação")
+      if (err) throw err
+      if (!result) throw new Error("Nenhum dado retornado")
 
-      // Atualiza evento na lista
-      const isAllDay = (endDate.getTime() - startDate.getTime()) >= (24 * 60 * 60 * 1000) &&
-        startDate.getHours() === 0 && endDate.getHours() === 0
+      const newEvent = mapDbEvent(result)
 
-      setEvents(prev => {
-        const novoEvento = {
-          id: dataResult.id,
-          title: dataResult.title,
-          start: startDate,
-          end: endDate,
-          allDay: isAllDay
-        }
-        
-        if (selectedEventId) {
-          return prev.map(e => e.id === selectedEventId ? novoEvento : e)
-        }
-        return [...prev, novoEvento]
-      })
+      setEvents((prev) =>
+        selectedEventId
+          ? prev.map((e) => (e.id === selectedEventId ? newEvent : e))
+          : [...prev, newEvent]
+      )
 
-      toast.success(selectedEventId ? "Evento atualizado com sucesso!" : "Evento salvo com sucesso!")
-
-      // Limpar formulário e fechar modal
-      setIsModalOpen(false)
-      resetForm()
-
+      toast.success(selectedEventId ? "Evento atualizado" : "Evento criado")
+      closePanel()
     } catch (err: any) {
-      console.error("Erro no handleCreateEvent:", err)
-      toast.error(err.message || "Falha desconhecida ao salvar evento")
+      toast.error(err.message ?? "Erro ao salvar evento")
     } finally {
       setIsSubmitting(false)
     }
-  }
+  }, [form, selectedEventId, closePanel])
 
-  // Navegação Customizada
+  // ── Navegação ──────────────────────────────────────────────────────────────
+
   const handleNext = useCallback(() => {
-    if (currentView === "month") setCurrentDate(addMonths(currentDate, 1))
-    else if (currentView === "week") setCurrentDate(addWeeks(currentDate, 1))
-    else if (currentView === "day") setCurrentDate(addDays(currentDate, 1))
-    else if (currentView === "agenda") setCurrentDate(addMonths(currentDate, 1))
-  }, [currentView, currentDate])
-
+    setCurrentDate((d) => {
+      const m = moment(d)
+      if (currentView === "month" || currentView === "agenda") return m.add(1, "months").toDate()
+      if (currentView === "week") return m.add(1, "weeks").toDate()
+      return m.add(1, "days").toDate()
+    })
+  }, [currentView])
+ 
   const handlePrev = useCallback(() => {
-    if (currentView === "month") setCurrentDate(subMonths(currentDate, 1))
-    else if (currentView === "week") setCurrentDate(subWeeks(currentDate, 1))
-    else if (currentView === "day") setCurrentDate(subDays(currentDate, 1))
-    else if (currentView === "agenda") setCurrentDate(subMonths(currentDate, 1))
-  }, [currentView, currentDate])
-
-  const handleToday = useCallback(() => {
-    setCurrentDate(new Date())
-  }, [])
-
-  // Memorizar componentes para evitar re-renderizações desnecessárias
+    setCurrentDate((d) => {
+      const m = moment(d)
+      if (currentView === "month" || currentView === "agenda") return m.subtract(1, "months").toDate()
+      if (currentView === "week") return m.subtract(1, "weeks").toDate()
+      return m.subtract(1, "days").toDate()
+    })
+  }, [currentView])
+ 
+  const handleToday = useCallback(() => setCurrentDate(new Date()), [])
+ 
+  // ── Memo ───────────────────────────────────────────────────────────────────
+ 
   const eventPropGetter = useCallback((event: CalendarEvent) => {
     if (event.allDay) {
       return {
-        className: 'rbc-event-all-day',
-        style: {
-          backgroundColor: '#8b5cf6',
-          borderColor: '#7c3aed'
-        }
+        style: { backgroundColor: "hsl(var(--primary))", borderColor: "transparent" },
       }
     }
     return {}
   }, [])
-
-  // Componente Customizado para o Evento visível ali na tela
-  const CustomEvent = useCallback(({ event }: { event: CalendarEvent }) => {
-    const diffInHours = (event.end.getTime() - event.start.getTime()) / (1000 * 60 * 60)
-    const diffInDays = Math.ceil(diffInHours / 24)
-
-    let infoExtra = ""
-    if (event.allDay || diffInHours >= 24) {
-      if (diffInDays > 1) {
-        infoExtra = `${format(event.start, "d/MM")} a ${format(event.end, "d/MM")}`
-      } else {
-        infoExtra = "Dia Inteiro"
-      }
+ 
+  const isToday = moment(currentDate).isSame(moment(), 'day')
+ 
+  const calendarLabel = useMemo(() => {
+    const m = moment(currentDate)
+    if (currentView === "day") return m.format("dddd, D [de] MMMM")
+    if (currentView === "week") {
+      const weekStart = m.clone().startOf("week")
+      return weekStart.format("MMMM YYYY")
     }
+    return m.format("MMMM YYYY")
+  }, [currentDate, currentView])
 
-    return (
-      <div className="flex flex-col h-full text-xs overflow-hidden leading-tight p-0.5">
-        <span className="font-semibold truncate">{event.title}</span>
-        {infoExtra && <span className="opacity-90 font-normal truncate text-[10px] mt-0.5">{infoExtra}</span>}
-      </div>
-    )
-  }, [])
+  const calendarMessages = useMemo(() => ({
+    noEventsInRange: "Nenhum evento neste período.",
+    allDay: "Dia inteiro",
+    previous: "Anterior",
+    next: "Próximo",
+    today: "Hoje",
+    month: "Mês",
+    week: "Semana",
+    day: "Dia",
+    agenda: "Agenda",
+    date: "Data",
+    time: "Hora",
+    event: "Evento",
+  }), [])
 
-  // Memorizar o calendário para evitar re-renderizações
-  const CalendarComponent = useMemo(() => (
-    <Calendar
-      localizer={localizer}
-      events={events}
-      startAccessor="start"
-      endAccessor="end"
-      culture="pt-BR"
-      view={currentView}
-      date={currentDate}
-      onView={(newView) => setCurrentView(newView)}
-      onNavigate={(newDate) => setCurrentDate(newDate)}
-      onSelectEvent={handleSelectEvent}
-      eventPropGetter={eventPropGetter}
-      components={{
-        toolbar: () => null,
-        event: CustomEvent
-      }}
-      messages={{
-        noEventsInRange: "Sem eventos neste período.",
-        allDay: "Dia inteiro",
-        previous: "Anterior",
-        next: "Próximo",
-        today: "Hoje",
-        month: "Mês",
-        week: "Semana",
-        day: "Dia",
-        agenda: "Agenda",
-        date: "Data",
-        time: "Hora",
-        event: "Evento",
-      }}
-      className="custom-calendar-theme flex-1 min-h-0"
-    />
-  ), [events, currentView, currentDate, eventPropGetter, CustomEvent, handleSelectEvent])
+  const calendarComponents = useMemo(() => ({
+    toolbar: () => null,
+    event: CustomEvent,
+  }), [])
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
-          <p className="text-muted-foreground animate-pulse">Carregando painel...</p>
-        </div>
-      </div>
-    )
-  }
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  if (loading) return <Spinner />
 
   return (
-    <div className="h-screen flex flex-col bg-background relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
-      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-accent/5 rounded-full blur-3xl pointer-events-none translate-y-1/2 -translate-x-1/3" />
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
 
-      <div className="flex-1 flex flex-col min-h-0 p-6 max-w-7xl mx-auto w-full gap-6 relative z-10">
+      {/* ── Header ── */}
+      <header className="flex-none flex items-center justify-between px-6 py-3 border-b border-border/40 bg-background/80 backdrop-blur-md">
 
-        {/* Cabeçalho */}
-        <header className="flex-none flex items-center justify-between bg-card/60 backdrop-blur-md border border-border/50 p-4 rounded-2xl">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-primary/10 rounded-xl hidden sm:flex">
-                <CalendarIcon className="w-6 h-6 text-primary" />
-              </div>
-              <div className="hidden sm:block">
-                <h1 className="text-2xl font-bold tracking-tight">Calendário</h1>
-                <p className="text-sm text-muted-foreground flex items-center gap-1 capitalize">
-                  {currentView === 'day' 
-                    ? format(currentDate, "EEEE, d 'de' MMMM yyyy", { locale: ptBR })
-                    : format(currentDate, "MMMM yyyy", { locale: ptBR })}
-                </p>
-              </div>
-            </div>
-
-            <div className="h-8 w-px bg-border/50 mx-2 hidden sm:block" />
-
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={handleToday} className="rounded-xl px-4 h-10 hidden md:flex">
+        {/* Logo + label */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5">
+            <CalendarIcon className="w-4 h-4 text-primary" />
+            <span className="text-sm font-semibold tracking-tight capitalize">{calendarLabel}</span>
+            {isToday && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
                 Hoje
-              </Button>
-              <div className="flex items-center gap-1 bg-secondary/30 rounded-xl p-1 border border-border/50">
-                <Button variant="ghost" size="icon" onClick={handlePrev} className="h-8 w-8 rounded-lg">
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={handleNext} className="h-8 w-8 rounded-lg">
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-              <div className="flex items-center bg-secondary/30 rounded-xl p-1 border border-border/50 ml-2">
-                {(["month", "week", "day", "agenda"] as View[]).map((view) => (
-                  <Button
-                    key={view}
-                    variant={currentView === view ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setCurrentView(view)}
-                    className="h-8 px-3 rounded-lg text-xs capitalize"
-                  >
-                    {view === "month" ? "Mês" : view === "week" ? "Semana" : view === "day" ? "Dia" : "Agenda"}
-                  </Button>
-                ))}
-              </div>
+              </span>
+            )}
+          </div>
+
+          <div className="h-4 w-px bg-border/50" />
+
+          {/* Navegação */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleToday}
+              className="text-xs px-3 py-1.5 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors font-medium"
+            >
+              Hoje
+            </button>
+            <div className="flex items-center">
+              <button
+                onClick={handlePrev}
+                className="p-1.5 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={handleNext}
+                className="p-1.5 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Dialog 
-              open={isModalOpen} 
-              onOpenChange={(open) => {
-                setIsModalOpen(open)
-                if (!open) resetForm()
-              }}
-            >
-              <DialogTrigger asChild>
-                <Button className="gap-2 rounded-xl px-4 h-10">
-                  <Plus className="w-4 h-4" />
-                  <span className="hidden sm:inline">Novo Evento</span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>{selectedEventId ? "Editar evento" : "Adicionar novo evento"}</DialogTitle>
-                  <DialogDescription>
-                    {selectedEventId ? "Modifique as informações do seu compromisso." : "Marque um compromisso no seu calendário e ele será salvo no Supabase."}
-                  </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleCreateEvent} className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="title">Título do Evento</Label>
-                    <Input
-                      id="title"
-                      placeholder="Ex: Call com a equipe"
-                      value={newEventTitle}
-                      onChange={(e) => setNewEventTitle(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="start">Início</Label>
-                      <Input
-                        id="start"
-                        type="datetime-local"
-                        value={newEventStart}
-                        onChange={(e) => setNewEventStart(e.target.value)}
-                        required
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Para dia inteiro, selecione apenas a data
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="end">Fim</Label>
-                      <Input
-                        id="end"
-                        type="datetime-local"
-                        value={newEventEnd}
-                        onChange={(e) => setNewEventEnd(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter className="pt-4 flex !justify-between items-center sm:justify-between space-x-2">
-                    {selectedEventId ? (
-                      <Button 
-                        type="button" 
-                        variant="destructive" 
-                        disabled={isDeleting}
-                        onClick={handleDeleteEvent}
-                        className="bg-destructive/10 text-destructive hover:bg-destructive hover:text-white"
-                      >
-                        {isDeleting ? "Excluindo..." : "Excluir"}
-                      </Button>
-                    ) : (
-                      <div />
-                    )}
-                    <div className="flex items-center gap-2">
-                      <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>
-                        Cancelar
-                      </Button>
-                      <Button type="submit" disabled={isSubmitting}>
-                        {isSubmitting ? "Salvando..." : "Salvar Evento"}
-                      </Button>
-                    </div>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="gap-2 rounded-xl h-10 px-4 hidden sm:flex border-border/50 bg-background/50">
-                  <UserIcon className="w-4 h-4" />
-                  <span className="max-w-[150px] truncate">{userEmail || "Perfil"}</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 mt-2 rounded-xl">
-                <DropdownMenuLabel className="font-normal">
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">Conta Conectada</p>
-                    <p className="text-xs leading-none text-muted-foreground truncate">{userEmail}</p>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")} 
-                  className="cursor-pointer gap-2"
-                >
-                  {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                  <span>{theme === "dark" ? "Modo Claro" : "Modo Escuro"}</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  onClick={handleLogout} 
-                  className="cursor-pointer gap-2 text-destructive focus:text-destructive focus:bg-destructive/10"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>Sair da conta</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+          {/* Seletor de view */}
+          <div className="flex items-center bg-secondary/30 rounded-lg p-0.5 border border-border/30">
+            {VIEWS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setCurrentView(key)}
+                className={`text-xs px-3 py-1.5 rounded-md transition-all font-medium ${
+                  currentView === key
+                    ? "bg-background text-foreground shadow-sm border border-border/30"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
-        </header>
+        </div>
 
-        {/* Container do calendário */}
-        <main className="flex-1 min-h-0 bg-card/80 backdrop-blur-sm border border-border/50 rounded-3xl overflow-hidden p-6 ring-1 ring-white/5 flex flex-col">
-          {CalendarComponent}
-        </main>
-      </div>
+        {/* Ações direitas */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={openNewEvent}
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Novo evento
+          </button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors border border-border/30">
+                <UserIcon className="w-3.5 h-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52 rounded-xl mt-2">
+              <DropdownMenuLabel className="font-normal py-2">
+                <p className="text-xs font-medium">Conta</p>
+                <p className="text-xs text-muted-foreground truncate mt-0.5">{userEmail}</p>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                className="cursor-pointer gap-2 text-sm"
+              >
+                {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+                {theme === "dark" ? "Modo claro" : "Modo escuro"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={handleLogout}
+                className="cursor-pointer gap-2 text-sm text-destructive focus:text-destructive focus:bg-destructive/8"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Sair
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </header>
+
+      {/* ── Calendário ── */}
+      <main className="flex-1 min-h-0 p-4">
+        <div className="h-full rounded-xl border border-border/40 overflow-hidden bg-background">
+          <Calendar
+            localizer={localizer}
+            events={events}
+            startAccessor="start"
+            endAccessor="end"
+            culture="pt-br"
+            view={currentView}
+            date={currentDate}
+            onView={setCurrentView}
+            onNavigate={setCurrentDate}
+            onSelectEvent={openEditEvent}
+            eventPropGetter={eventPropGetter}
+            components={calendarComponents}
+            messages={calendarMessages}
+            className="custom-calendar-theme h-full"
+          />
+        </div>
+      </main>
+
+      {/* ── Slide-over ── */}
+      <EventSlideOver
+        open={panelOpen}
+        form={form}
+        selectedEventId={selectedEventId}
+        isSubmitting={isSubmitting}
+        isDeleting={isDeleting}
+        onClose={closePanel}
+        onChange={handleFormChange}
+        onSubmit={handleSubmit}
+        onDelete={handleDeleteEvent}
+      />
     </div>
   )
 }
