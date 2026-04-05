@@ -1,212 +1,162 @@
-/* ─── Base ─────────────────────────────────────────────────────────────────── */
-.custom-calendar-theme {
+/* ─── Base & Theme Overrides ─────────────────────────────────────────────── */
+.fc-theme-custom {
+  --fc-border-color: hsl(var(--border) / 0.3);
+  --fc-daygrid-event-dot-width: 8px;
+  --fc-list-event-dot-width: 10px;
+  --fc-list-event-hover-bg-color: hsl(var(--secondary) / 0.4);
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: hsl(var(--secondary) / 0.1);
+  --fc-today-bg-color: hsl(var(--primary) / 0.05);
+
   font-family: inherit;
-  border: none !important;
-  height: 100% !important;
+  font-size: 0.85rem;
 }
 
-/* ─── Views container ───────────────────────────────────────────────────────── */
-.custom-calendar-theme .rbc-month-view,
-.custom-calendar-theme .rbc-time-view,
-.custom-calendar-theme .rbc-agenda-view {
+/* Remover bordas externas redundantes */
+.fc-theme-custom.fc {
   border: none !important;
-  background: transparent;
-  height: 100%;
 }
 
-/* ─── Header de colunas (Seg, Ter…) ─────────────────────────────────────────── */
-.custom-calendar-theme .rbc-header {
+/* ─── Header de Colunas ────────────────────────────────────────────────────── */
+.fc-theme-custom .fc-col-header-cell {
   padding: 0.75rem 0.5rem;
+  background: transparent;
+}
+
+.fc-theme-custom .fc-col-header-cell-cushion {
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: hsl(var(--muted-foreground) / 0.6);
-  border-bottom: 1px solid hsl(var(--border) / 0.4) !important;
-  border-left: none !important;
+  color: hsl(var(--muted-foreground) / 0.65);
+  text-decoration: none !important;
 }
 
-.custom-calendar-theme .rbc-header+.rbc-header {
-  border-left: 1px solid hsl(var(--border) / 0.25) !important;
-}
-
-/* ─── Eventos ────────────────────────────────────────────────────────────────── */
-.custom-calendar-theme .rbc-event {
-  background: hsl(var(--primary));
-  border: none !important;
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 0.75rem;
-  color: hsl(var(--primary-foreground));
-  transition: opacity 0.15s ease, transform 0.15s ease;
-  box-shadow: none;
-}
-
-.custom-calendar-theme .rbc-event:hover {
-  opacity: 0.88;
-  transform: translateY(-1px);
-}
-
-.custom-calendar-theme .rbc-event.rbc-selected {
-  background: hsl(var(--primary));
-  box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--primary) / 0.4);
-}
-
-.custom-calendar-theme .rbc-event-content {
+/* ─── Células de Dias ──────────────────────────────────────────────────────── */
+.fc-theme-custom .fc-daygrid-day-number {
+  padding: 8px 12px;
   font-size: 0.75rem;
   font-weight: 500;
+  color: hsl(var(--muted-foreground) / 0.8);
+  text-decoration: none !important;
 }
 
-/* ─── Grid linhas ────────────────────────────────────────────────────────────── */
-.custom-calendar-theme .rbc-month-row {
-  border-top: 1px solid hsl(var(--border) / 0.3) !important;
-}
-
-.custom-calendar-theme .rbc-day-bg+.rbc-day-bg {
-  border-left: 1px solid hsl(var(--border) / 0.2) !important;
-}
-
-/* ─── Time view ─────────────────────────────────────────────────────────────── */
-.custom-calendar-theme .rbc-time-content {
-  border-top: 1px solid hsl(var(--border) / 0.3) !important;
-}
-
-.custom-calendar-theme .rbc-time-content>*+*>* {
-  border-left: 1px solid hsl(var(--border) / 0.2) !important;
-}
-
-.custom-calendar-theme .rbc-timeslot-group {
-  border-bottom: 1px solid hsl(var(--border) / 0.1) !important;
-  min-height: 48px;
-}
-
-.custom-calendar-theme .rbc-day-slot .rbc-time-slot {
-  border-top: 1px solid hsl(var(--border) / 0.08) !important;
-}
-
-/* Gutter de horas */
-.custom-calendar-theme .rbc-time-gutter .rbc-timeslot-group {
-  color: hsl(var(--muted-foreground) / 0.5);
-  font-size: 0.68rem;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  border-bottom: 1px solid hsl(var(--border) / 0.1) !important;
-}
-
-.custom-calendar-theme .rbc-time-gutter .rbc-time-slot {
-  display: flex;
-  justify-content: flex-end;
-  align-items: flex-start;
-  padding-right: 10px;
-  padding-top: 4px;
-}
-
-.custom-calendar-theme .rbc-time-header.rbc-overflowing {
-  border-right: none !important;
-}
-
-.custom-calendar-theme .rbc-time-header-content {
-  border-left: 1px solid hsl(var(--border) / 0.2) !important;
-}
-
-/* ─── Dia atual ──────────────────────────────────────────────────────────────── */
-.custom-calendar-theme .rbc-today {
-  background: hsl(var(--primary) / 0.04) !important;
-}
-
-.custom-calendar-theme .rbc-current-time-indicator {
-  background: hsl(var(--primary));
-  height: 1px;
-  opacity: 0.6;
-}
-
-/* ─── Dias fora do mês ───────────────────────────────────────────────────────── */
-.custom-calendar-theme .rbc-off-range-bg {
-  background: hsl(var(--secondary) / 0.15) !important;
-}
-
-.custom-calendar-theme .rbc-off-range {
-  color: hsl(var(--muted-foreground) / 0.35) !important;
-}
-
-/* ─── Número do dia ──────────────────────────────────────────────────────────── */
-.custom-calendar-theme .rbc-date-cell {
-  padding: 6px 8px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: hsl(var(--muted-foreground));
-  text-align: right;
-}
-
-.custom-calendar-theme .rbc-date-cell.rbc-now {
+.fc-theme-custom .fc-day-today .fc-daygrid-day-number {
   color: hsl(var(--primary));
   font-weight: 700;
 }
 
-/* ─── Célula "all day" ───────────────────────────────────────────────────────── */
-.custom-calendar-theme .rbc-allday-cell {
-  background: transparent;
-  border-bottom: 1px solid hsl(var(--border) / 0.3) !important;
-  min-height: 28px;
+/* Ajuste de slots de tempo */
+.fc-theme-custom .fc-timegrid-slot {
+  height: 4.5rem !important;
+  border-bottom: 1px solid hsl(var(--border) / 0.1) !important;
 }
 
-/* ─── Agenda view ────────────────────────────────────────────────────────────── */
-.custom-calendar-theme .rbc-agenda-view table {
-  border: none;
-  font-size: 0.8rem;
-}
-
-.custom-calendar-theme .rbc-agenda-view table thead>tr>th {
-  border-bottom: 1px solid hsl(var(--border) / 0.4);
-  padding: 0.5rem 1rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+.fc-theme-custom .fc-timegrid-slot-label-cushion {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground) / 0.5);
   text-transform: uppercase;
-  color: hsl(var(--muted-foreground) / 0.6);
 }
 
-.custom-calendar-theme .rbc-agenda-date-cell,
-.custom-calendar-theme .rbc-agenda-time-cell {
-  color: hsl(var(--muted-foreground));
-  white-space: nowrap;
-  padding: 0.6rem 1rem;
-  border-bottom: 1px solid hsl(var(--border) / 0.2);
-  font-size: 0.78rem;
+/* ─── Eventos ───────────────────────────────────────────────────────────────── */
+.fc-theme-custom .fc-event {
+  background: hsl(var(--primary)) !important;
+  border: none !important;
+  border-radius: 6px !important;
+  padding: 1px !important;
+  margin: 1px 2px !important;
+  box-shadow: 0 4px 12px -4px hsl(var(--primary) / 0.25);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  cursor: pointer;
 }
 
-.custom-calendar-theme .rbc-agenda-event-cell {
-  padding: 0.6rem 1rem;
-  border-bottom: 1px solid hsl(var(--border) / 0.2);
+.fc-theme-custom .fc-event:hover {
+  transform: translateY(-1px) scale(1.01);
+  box-shadow: 0 6px 16px -4px hsl(var(--primary) / 0.35);
+  opacity: 0.95;
 }
 
-.custom-calendar-theme .rbc-agenda-empty {
-  padding: 3rem 1.5rem;
-  font-size: 0.8rem;
-  color: hsl(var(--muted-foreground) / 0.6);
-  text-align: center;
+.fc-theme-custom .fc-event-main {
+  padding: 2px 4px !important;
+  color: hsl(var(--primary-foreground)) !important;
 }
 
-/* ─── Slot de seleção ────────────────────────────────────────────────────────── */
-.custom-calendar-theme .rbc-slot-selection {
-  background: hsl(var(--primary) / 0.12);
-  border: 1px solid hsl(var(--primary) / 0.3);
-  border-radius: 4px;
-  font-size: 0.7rem;
-  color: hsl(var(--primary));
-  padding: 4px 8px;
+/* Eventos na visualização de Agenda (List) */
+.fc-theme-custom .fc-list-event {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
 }
 
-/* ─── "Show more" ────────────────────────────────────────────────────────────── */
-.custom-calendar-theme .rbc-show-more {
-  font-size: 0.7rem;
-  color: hsl(var(--primary));
+.fc-theme-custom .fc-list-day-cushion {
+  background: hsl(var(--secondary) / 0.3) !important;
+  padding: 10px 16px !important;
+}
+
+.fc-theme-custom .fc-list-day-text,
+.fc-theme-custom .fc-list-day-side-text {
+  font-size: 0.75rem;
   font-weight: 600;
-  padding: 2px 6px;
+  color: hsl(var(--foreground));
+  text-decoration: none !important;
+}
+
+.fc-theme-custom .fc-list-event-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 12px !important;
+}
+
+.fc-theme-custom .fc-list-event-time {
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  padding-left: 16px !important;
+}
+
+/* ─── Scrollbars & Misc ────────────────────────────────────────────────────── */
+.fc-theme-custom .fc-scroller::-webkit-scrollbar {
+  width: 6px;
+}
+
+.fc-theme-custom .fc-scroller::-webkit-scrollbar-thumb {
+  background: hsl(var(--border) / 0.5);
+  border-radius: 10px;
+}
+
+.fc-theme-custom .fc-scroller::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.custom-calendar-theme .rbc-show-more:hover {
-  text-decoration: underline;
-  background: transparent;
+/* Esconder botões padrão que não usamos */
+.fc-header-toolbar {
+  display: none !important;
+}
+
+/* Indicador de hora atual */
+.fc-theme-custom .fc-timegrid-now-indicator-line {
+  border-color: hsl(var(--primary)) !important;
+  border-width: 2px 0 0 !important;
+}
+
+.fc-theme-custom .fc-timegrid-now-indicator-arrow {
+  border-color: transparent transparent transparent hsl(var(--primary)) !important;
+  border-width: 5px 0 5px 6px !important;
+}
+
+/* Alinhamento de eventos de dia inteiro */
+.fc-theme-custom .fc-daygrid-event {
+  margin-top: 2px !important;
+  margin-bottom: 2px !important;
+}
+
+/* Customização do "Mais" (+2 more) */
+.fc-theme-custom .fc-daygrid-more-link {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: hsl(var(--primary));
+  padding: 2px 6px;
+  background: hsl(var(--primary) / 0.1);
+  border-radius: 4px;
+  margin: 2px;
+  text-decoration: none !important;
 }

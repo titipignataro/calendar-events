@@ -28,30 +28,33 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar as CalendarUI } from "@/components/ui/calendar"
-import { cn } from "@/lib/utils"
 
-import { Calendar, momentLocalizer, View } from "react-big-calendar"
+import dynamic from "next/dynamic"
+import type FC from "@fullcalendar/react"
+import dayGridPlugin from "@fullcalendar/daygrid"
+import timeGridPlugin from "@fullcalendar/timegrid"
+import listPlugin from "@fullcalendar/list"
+import interactionPlugin from "@fullcalendar/interaction"
+import momentTimezonePlugin from "@fullcalendar/moment-timezone"
 import moment from "moment-timezone"
 import "moment/locale/pt-br"
-import "react-big-calendar/lib/css/react-big-calendar.css"
 import "./calendar-custom.css"
 
-// ─── Localizer ────────────────────────────────────────────────────────────────
+const FullCalendar = dynamic(() => import("@fullcalendar/react"), { 
+  ssr: false,
+  loading: () => <div className="h-full w-full bg-secondary/10 animate-pulse rounded-xl" />
+})
 
 moment.locale("pt-br")
 moment.tz.setDefault("America/Sao_Paulo")
-
-const localizer = momentLocalizer(moment)
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type CalendarEvent = {
   id: string
   title: string
-  start: Date
-  end: Date
+  start: string
+  end: string
   allDay?: boolean
 }
 
@@ -63,36 +66,27 @@ type FormState = {
 
 const EMPTY_FORM: FormState = { title: "", start: "", end: "" }
 
-const VIEWS: { key: View; label: string }[] = [
-  { key: "month", label: "Mês" },
-  { key: "week", label: "Semana" },
-  { key: "day", label: "Dia" },
-  { key: "agenda", label: "Agenda" },
+const VIEWS: { key: string; label: string }[] = [
+  { key: "dayGridMonth", label: "Mês" },
+  { key: "timeGridWeek", label: "Semana" },
+  { key: "timeGridDay", label: "Dia" },
+  { key: "listWeek", label: "Agenda" },
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function isAllDayEvent(start: Date, end: Date): boolean {
-  const diffH = (end.getTime() - start.getTime()) / 3_600_000
-  return (
-    diffH >= 24 &&
-    diffH % 24 === 0 &&
-    start.getHours() === 0 &&
-    start.getMinutes() === 0 &&
-    end.getHours() === 0 &&
-    end.getMinutes() === 0
-  )
-}
 function mapDbEvent(item: any): CalendarEvent {
-  const start = new Date(item.start_time)
-  const end = new Date(item.end_time)
+  // Converte explicitamente do UTC do Supabase para o horário local de SP como string crua,
+  // eliminando qualquer offset que faria o FullCalendar "pular" o evento para trás à meia-noite.
+  const toLocal = (iso: string) => 
+    moment.utc(iso).tz("America/Sao_Paulo").format("YYYY-MM-DDTHH:mm:ss")
 
   return {
     id: item.id,
     title: item.title,
-    start,
-    end,
-    allDay: isAllDayEvent(start, end),
+    start: toLocal(item.start_time),
+    end: toLocal(item.end_time),
+    allDay: false, 
   }
 }
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -136,12 +130,7 @@ function EventSlideOver({
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
-      const target = e.target as Element
-      
-      // Ignorar caso o clique tenha sido dentro de um dialog/popover do calendário (shadcn portal)
-      if (target.closest('[data-slot="popover-content"]')) return
-
-      if (panelRef.current && !panelRef.current.contains(target)) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         onClose()
       }
     }
@@ -189,7 +178,7 @@ function EventSlideOver({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -217,89 +206,29 @@ function EventSlideOver({
               <Label htmlFor="start" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Início
               </Label>
-              <div className="flex gap-2">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "h-10 text-sm bg-secondary/20 border-border/40 hover:bg-secondary/30 focus:ring-0 rounded-lg cursor-pointer flex-1 justify-start text-left font-normal",
-                        !form.start && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-3.5 w-3.5" />
-                      {form.start && form.start.length >= 10 ? moment(form.start.substring(0, 10)).format("L") : <span>Selecionar data</span>}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0 z-[100]" align="start">
-                    <CalendarUI
-                      mode="single"
-                      selected={form.start && form.start.length >= 10 ? moment(form.start.substring(0, 10)).toDate() : undefined}
-                      onSelect={(date) => {
-                        if (!date) return
-                        const time = form.start && form.start.length >= 16 ? form.start.substring(11, 16) : "12:00"
-                        onChange("start", `${moment(date).format("YYYY-MM-DD")}T${time}`)
-                      }}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-                <Input
-                  type="time"
-                  value={form.start && form.start.length >= 16 ? form.start.substring(11, 16) : ""}
-                  onChange={(e) => {
-                    const date = form.start && form.start.length >= 10 ? form.start.substring(0, 10) : moment().format("YYYY-MM-DD")
-                    onChange("start", `${date}T${e.target.value || "00:00"}`)
-                  }}
-                  required
-                  className="h-10 text-sm bg-secondary/20 border-border/40 focus:border-primary/50 focus:ring-0 rounded-lg cursor-pointer w-[110px]"
-                />
-              </div>
+              <Input
+                id="start"
+                type="datetime-local"
+                value={form.start}
+                onChange={(e) => onChange("start", e.target.value)}
+                required
+                className="h-10 text-sm bg-secondary/20 border-border/40 focus:border-primary/50 focus:ring-0 rounded-lg"
+              />
             </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="end" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Fim
               </Label>
-              <div className="flex gap-2">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "h-10 text-sm bg-secondary/20 border-border/40 hover:bg-secondary/30 focus:ring-0 rounded-lg cursor-pointer flex-1 justify-start text-left font-normal",
-                        !form.end && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-3.5 w-3.5" />
-                      {form.end && form.end.length >= 10 ? moment(form.end.substring(0, 10)).format("L") : <span>Selecionar data</span>}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0 z-[100]" align="start">
-                    <CalendarUI
-                      mode="single"
-                      selected={form.end && form.end.length >= 10 ? moment(form.end.substring(0, 10)).toDate() : undefined}
-                      onSelect={(date) => {
-                        if (!date) return
-                        const time = form.end && form.end.length >= 16 ? form.end.substring(11, 16) : "13:00"
-                        onChange("end", `${moment(date).format("YYYY-MM-DD")}T${time}`)
-                      }}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-                <Input
-                  type="time"
-                  value={form.end && form.end.length >= 16 ? form.end.substring(11, 16) : ""}
-                  onChange={(e) => {
-                    const date = form.end && form.end.length >= 10 ? form.end.substring(0, 10) : moment().format("YYYY-MM-DD")
-                    onChange("end", `${date}T${e.target.value || "00:00"}`)
-                  }}
-                  required
-                  className="h-10 text-sm bg-secondary/20 border-border/40 focus:border-primary/50 focus:ring-0 rounded-lg cursor-pointer w-[110px]"
-                />
-              </div>
-              <p className="text-[11px] mt-1 text-muted-foreground/60 leading-tight">
+              <Input
+                id="end"
+                type="datetime-local"
+                value={form.end}
+                onChange={(e) => onChange("end", e.target.value)}
+                required
+                className="h-10 text-sm bg-secondary/20 border-border/40 focus:border-primary/50 focus:ring-0 rounded-lg"
+              />
+              <p className="text-[11px] text-muted-foreground/60">
                 Para evento de dia inteiro, selecione 00:00 em ambos e em dias diferentes
               </p>
             </div>
@@ -335,15 +264,15 @@ function EventSlideOver({
 }
 
 // Custom event card renderizado dentro do calendário
-const CustomEvent = ({ event }: { event: CalendarEvent }) => {
-  const diffH = (event.end.getTime() - event.start.getTime()) / 3_600_000
-  const diffDays = Math.ceil(diffH / 24)
+const CustomEvent = (arg: any) => {
+  const { event } = arg
+  const start = event.start as Date
+  const end = event.end as Date
+  const isAllDay = event.allDay
 
   let sub = ""
-  if (event.allDay || diffH >= 24) {
-    sub = diffDays > 1
-      ? `${format(event.start, "d/MM")} – ${format(event.end, "d/MM")}`
-      : "Dia inteiro"
+  if (isAllDay || (end && (end.getTime() - start.getTime()) / 3_600_000 >= 24)) {
+    sub = "Dia inteiro"
   }
 
   return (
@@ -371,27 +300,25 @@ export default function CalendarPage() {
   const [isDeleting, setIsDeleting] = useState(false)
 
   // Calendário
+  const calendarRef = useRef<FC>(null)
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [currentView, setCurrentView] = useState<View>("week")
+  const [currentView, setCurrentView] = useState("dayGridMonth")
+  const [isMounted, setIsMounted] = useState(false)
 
-  function toSafeDate(date: Date): Date {
-  return new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-    12, 0, 0
-  )
-}
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
-   const displayEvents = useMemo(() => {
-  if (currentView !== "month") return events
-
-  return events.map((e) => ({
-    ...e,
-    start: toSafeDate(e.start),
-    end: toSafeDate(e.end),
-  }))
-}, [events, currentView])
+  const displayEvents = useMemo(() => {
+    return events.map(e => ({
+      ...e,
+      id: e.id,
+      title: e.title,
+      start: e.start,
+      end: e.end,
+      allDay: e.allDay
+    }))
+  }, [events])
 
   // Usuário
   const { theme, setTheme } = useTheme()
@@ -458,18 +385,15 @@ export default function CalendarPage() {
     setPanelOpen(true)
   }, [])
 
-  const openEditEvent = useCallback((event: CalendarEvent) => {
-    // Como a view "month" muta a data para 12:00 em displayEvents, resgatamos o evento com a hora original
-    const originalEvent = events.find(e => e.id === event.id) || event
-
-    setSelectedEventId(originalEvent.id)
+  const openEditEvent = useCallback((id: string, title: string, startStr: string, endStr: string) => {
+    setSelectedEventId(id)
     setForm({
-      title: originalEvent.title,
-      start: moment(originalEvent.start).format("YYYY-MM-DDTHH:mm"),
-      end: moment(originalEvent.end).format("YYYY-MM-DDTHH:mm"),
+      title,
+      start: startStr,
+      end: endStr,
     })
     setPanelOpen(true)
-  }, [events])
+  }, [])
 
   const closePanel = useCallback(() => {
     setPanelOpen(false)
@@ -574,24 +498,21 @@ export default function CalendarPage() {
   // ── Navegação ──────────────────────────────────────────────────────────────
 
   const handleNext = useCallback(() => {
-    setCurrentDate((d) => {
-      const m = moment(d)
-      if (currentView === "month" || currentView === "agenda") return m.add(1, "months").toDate()
-      if (currentView === "week") return m.add(1, "weeks").toDate()
-      return m.add(1, "days").toDate()
-    })
-  }, [currentView])
+    calendarRef.current?.getApi().next()
+  }, [])
  
   const handlePrev = useCallback(() => {
-    setCurrentDate((d) => {
-      const m = moment(d)
-      if (currentView === "month" || currentView === "agenda") return m.subtract(1, "months").toDate()
-      if (currentView === "week") return m.subtract(1, "weeks").toDate()
-      return m.subtract(1, "days").toDate()
-    })
-  }, [currentView])
+    calendarRef.current?.getApi().prev()
+  }, [])
  
-  const handleToday = useCallback(() => setCurrentDate(new Date()), [])
+  const handleToday = useCallback(() => {
+    calendarRef.current?.getApi().today()
+  }, [])
+
+  const handleViewChange = useCallback((viewKey: string) => {
+    calendarRef.current?.getApi().changeView(viewKey)
+    setCurrentView(viewKey)
+  }, [])
  
   // ── Memo ───────────────────────────────────────────────────────────────────
  
@@ -604,37 +525,11 @@ export default function CalendarPage() {
     return {}
   }, [])
  
-  const isToday = moment(currentDate).isSame(moment(), 'day')
- 
   const calendarLabel = useMemo(() => {
     const m = moment(currentDate)
-    if (currentView === "day") return m.format("dddd, D [de] MMMM")
-    if (currentView === "week") {
-      const weekStart = m.clone().startOf("week")
-      return weekStart.format("MMMM YYYY")
-    }
+    if (currentView === "timeGridDay") return m.format("dddd, D [de] MMMM")
     return m.format("MMMM YYYY")
   }, [currentDate, currentView])
-
-  const calendarMessages = useMemo(() => ({
-    noEventsInRange: "Nenhum evento neste período.",
-    allDay: "Dia inteiro",
-    previous: "Anterior",
-    next: "Próximo",
-    today: "Hoje",
-    month: "Mês",
-    week: "Semana",
-    day: "Dia",
-    agenda: "Agenda",
-    date: "Data",
-    time: "Hora",
-    event: "Evento",
-  }), [])
-
-  const calendarComponents = useMemo(() => ({
-    toolbar: () => null,
-    event: CustomEvent,
-  }), [])
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -651,7 +546,7 @@ export default function CalendarPage() {
           <div className="flex items-center gap-2.5">
             <CalendarIcon className="w-4 h-4 text-primary" />
             <span className="text-sm font-semibold tracking-tight capitalize">{calendarLabel}</span>
-            {isToday && (
+            {moment(currentDate).isSame(moment(), 'day') && (
               <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
                 Hoje
               </span>
@@ -664,20 +559,20 @@ export default function CalendarPage() {
           <div className="flex items-center gap-1">
             <button
               onClick={handleToday}
-              className="text-xs px-3 py-1.5 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors font-medium cursor-pointer"
+              className="text-xs px-3 py-1.5 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors font-medium"
             >
               Hoje
             </button>
             <div className="flex items-center">
               <button
                 onClick={handlePrev}
-                className="p-1.5 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                className="p-1.5 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={handleNext}
-                className="p-1.5 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                className="p-1.5 rounded-md hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
@@ -689,8 +584,8 @@ export default function CalendarPage() {
             {VIEWS.map(({ key, label }) => (
               <button
                 key={key}
-                onClick={() => setCurrentView(key)}
-                className={`text-xs px-3 py-1.5 rounded-md transition-all font-medium cursor-pointer ${
+                onClick={() => handleViewChange(key)}
+                className={`text-xs px-3 py-1.5 rounded-md transition-all font-medium ${
                   currentView === key
                     ? "bg-background text-foreground shadow-sm border border-border/30"
                     : "text-muted-foreground hover:text-foreground"
@@ -706,7 +601,7 @@ export default function CalendarPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={openNewEvent}
-            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             Novo evento
@@ -714,7 +609,7 @@ export default function CalendarPage() {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors border border-border/30 cursor-pointer">
+              <button className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors border border-border/30">
                 <UserIcon className="w-3.5 h-3.5" />
               </button>
             </DropdownMenuTrigger>
@@ -746,23 +641,57 @@ export default function CalendarPage() {
 
       {/* ── Calendário ── */}
       <main className="flex-1 min-h-0 p-4">
-        <div className="h-full rounded-xl border border-border/40 overflow-hidden bg-background">
-          <Calendar
-            localizer={localizer}
-            events={displayEvents}
-            startAccessor="start"
-            endAccessor="end"
-            culture="pt-br"
-            view={currentView}
-            date={currentDate}
-            onView={setCurrentView}
-            onNavigate={setCurrentDate}
-            onSelectEvent={openEditEvent}
-            eventPropGetter={eventPropGetter}
-            components={calendarComponents}
-            messages={calendarMessages}
-            className="custom-calendar-theme h-full"
-          />
+        <div className="h-full rounded-xl border border-border/40 overflow-hidden bg-background fc-theme-custom">
+          {isMounted && (
+            <FullCalendar
+              ref={calendarRef}
+              plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin, momentTimezonePlugin]}
+              initialView="dayGridMonth"
+              timeZone="America/Sao_Paulo"
+              locale="pt-br"
+              events={displayEvents}
+              headerToolbar={false}
+              height="100%"
+              dayMaxEvents={true}
+              allDayText="Dia inteiro"
+              buttonText={{
+                today: "Hoje",
+                month: "Mês",
+                week: "Semana",
+                day: "Dia",
+                list: "Agenda"
+              }}
+              eventContent={CustomEvent}
+              eventClick={(info) => {
+                const ev = info.event
+                
+                const startIso = ev.startStr
+                const endIso = ev.endStr || ev.startStr
+
+                const startVal = startIso.length >= 16 ? startIso.substring(0, 16) : `${startIso.substring(0, 10)}T12:00`
+                const endVal = endIso.length >= 16 ? endIso.substring(0, 16) : `${endIso.substring(0, 10)}T13:00`
+
+                openEditEvent(ev.id, ev.title, startVal, endVal)
+              }}
+              dateClick={(info) => {
+                setSelectedEventId(null)
+                const startIso = info.dateStr
+                const startVal = startIso.length >= 16 ? startIso.substring(0, 16) : `${startIso.substring(0, 10)}T12:00`
+                const endVal = moment(startVal, "YYYY-MM-DDTHH:mm").add(1, 'hour').format("YYYY-MM-DDTHH:mm")
+
+                setForm({
+                  ...EMPTY_FORM,
+                  start: startVal,
+                  end: endVal,
+                })
+                setPanelOpen(true)
+              }}
+              datesSet={(arg) => {
+                setCurrentDate(arg.view.currentStart)
+                setCurrentView(arg.view.type)
+              }}
+            />
+          )}
         </div>
       </main>
 
