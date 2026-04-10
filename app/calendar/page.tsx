@@ -30,6 +30,7 @@ import { useTheme } from "next-themes"
 import { toast } from "sonner"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarUI } from "@/components/ui/calendar"
+import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
 
 import { Calendar, momentLocalizer, View } from "react-big-calendar"
@@ -59,30 +60,20 @@ type FormState = {
   title: string
   start: string
   end: string
+  allDay: boolean
 }
 
-const EMPTY_FORM: FormState = { title: "", start: "", end: "" }
+const EMPTY_FORM: FormState = { title: "", start: "", end: "", allDay: false }
 
 const VIEWS: { key: View; label: string }[] = [
+  { key: "agenda", label: "Resumo" },
   { key: "month", label: "Mês" },
   { key: "week", label: "Semana" },
   { key: "day", label: "Dia" },
-  { key: "agenda", label: "Agenda" },
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function isAllDayEvent(start: Date, end: Date): boolean {
-  const diffH = (end.getTime() - start.getTime()) / 3_600_000
-  return (
-    diffH >= 24 &&
-    diffH % 24 === 0 &&
-    start.getHours() === 0 &&
-    start.getMinutes() === 0 &&
-    end.getHours() === 0 &&
-    end.getMinutes() === 0
-  )
-}
 function mapDbEvent(item: any): CalendarEvent {
   const start = new Date(item.start_time)
   const end = new Date(item.end_time)
@@ -92,7 +83,7 @@ function mapDbEvent(item: any): CalendarEvent {
     title: item.title,
     start,
     end,
-    allDay: isAllDayEvent(start, end),
+    allDay: item.all_day || false,
   }
 }
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -126,11 +117,13 @@ function EventSlideOver({
   isSubmitting: boolean
   isDeleting: boolean
   onClose: () => void
-  onChange: (field: keyof FormState, value: string) => void
+  onChange: (field: keyof FormState, value: any) => void
   onSubmit: (e: React.FormEvent) => void
   onDelete: () => void
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
+  const [startOpen, setStartOpen] = useState(false)
+  const [endOpen, setEndOpen] = useState(false)
 
   // Fechar ao clicar fora
   useEffect(() => {
@@ -213,12 +206,26 @@ function EventSlideOver({
               />
             </div>
 
+            <div className="flex items-center space-x-2 py-2">
+              <Checkbox
+                id="allDay"
+                checked={form.allDay}
+                onCheckedChange={(checked) => onChange("allDay", !!checked)}
+              />
+              <Label
+                htmlFor="allDay"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+              >
+                Dia inteiro
+              </Label>
+            </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="start" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Início
               </Label>
               <div className="flex gap-2">
-                <Popover>
+                <Popover open={startOpen} onOpenChange={setStartOpen}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
@@ -239,21 +246,24 @@ function EventSlideOver({
                         if (!date) return
                         const time = form.start && form.start.length >= 16 ? form.start.substring(11, 16) : "12:00"
                         onChange("start", `${moment(date).format("YYYY-MM-DD")}T${time}`)
+                        setStartOpen(false)
                       }}
                       initialFocus
                     />
                   </PopoverContent>
                 </Popover>
-                <Input
-                  type="time"
-                  value={form.start && form.start.length >= 16 ? form.start.substring(11, 16) : ""}
-                  onChange={(e) => {
-                    const date = form.start && form.start.length >= 10 ? form.start.substring(0, 10) : moment().format("YYYY-MM-DD")
-                    onChange("start", `${date}T${e.target.value || "00:00"}`)
-                  }}
-                  required
-                  className="h-10 text-sm bg-secondary/20 border-border/40 focus:border-primary/50 focus:ring-0 rounded-lg cursor-pointer w-[110px]"
-                />
+                {!form.allDay && (
+                  <Input
+                    type="time"
+                    value={form.start && form.start.length >= 16 ? form.start.substring(11, 16) : ""}
+                    onChange={(e) => {
+                      const date = form.start && form.start.length >= 10 ? form.start.substring(0, 10) : moment().format("YYYY-MM-DD")
+                      onChange("start", `${date}T${e.target.value || "00:00"}`)
+                    }}
+                    required
+                    className="h-10 text-sm bg-secondary/20 border-border/40 focus:border-primary/50 focus:ring-0 rounded-lg cursor-text w-[110px]"
+                  />
+                )}
               </div>
             </div>
 
@@ -262,7 +272,7 @@ function EventSlideOver({
                 Fim
               </Label>
               <div className="flex gap-2">
-                <Popover>
+                <Popover open={endOpen} onOpenChange={setEndOpen}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
@@ -283,24 +293,27 @@ function EventSlideOver({
                         if (!date) return
                         const time = form.end && form.end.length >= 16 ? form.end.substring(11, 16) : "13:00"
                         onChange("end", `${moment(date).format("YYYY-MM-DD")}T${time}`)
+                        setEndOpen(false)
                       }}
                       initialFocus
                     />
                   </PopoverContent>
                 </Popover>
-                <Input
-                  type="time"
-                  value={form.end && form.end.length >= 16 ? form.end.substring(11, 16) : ""}
-                  onChange={(e) => {
-                    const date = form.end && form.end.length >= 10 ? form.end.substring(0, 10) : moment().format("YYYY-MM-DD")
-                    onChange("end", `${date}T${e.target.value || "00:00"}`)
-                  }}
-                  required
-                  className="h-10 text-sm bg-secondary/20 border-border/40 focus:border-primary/50 focus:ring-0 rounded-lg cursor-pointer w-[110px]"
-                />
+                {!form.allDay && (
+                  <Input
+                    type="time"
+                    value={form.end && form.end.length >= 16 ? form.end.substring(11, 16) : ""}
+                    onChange={(e) => {
+                      const date = form.end && form.end.length >= 10 ? form.end.substring(0, 10) : moment().format("YYYY-MM-DD")
+                      onChange("end", `${date}T${e.target.value || "00:00"}`)
+                    }}
+                    required
+                    className="h-10 text-sm bg-secondary/20 border-border/40 focus:border-primary/50 focus:ring-0 rounded-lg cursor-text w-[110px]"
+                  />
+                )}
               </div>
               <p className="text-[11px] mt-1 text-muted-foreground/60 leading-tight">
-                Para evento de dia inteiro, selecione 00:00 em ambos e em dias diferentes
+                {form.allDay ? "O evento durará o dia inteiro." : "Selecione o horário de término."}
               </p>
             </div>
           </div>
@@ -372,7 +385,7 @@ export default function CalendarPage() {
 
   // Calendário
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [currentView, setCurrentView] = useState<View>("week")
+  const [currentView, setCurrentView] = useState<View>("agenda")
 
   function toSafeDate(date: Date): Date {
   return new Date(
@@ -467,6 +480,7 @@ export default function CalendarPage() {
       title: originalEvent.title,
       start: moment(originalEvent.start).format("YYYY-MM-DDTHH:mm"),
       end: moment(originalEvent.end).format("YYYY-MM-DDTHH:mm"),
+      allDay: originalEvent.allDay || false,
     })
     setPanelOpen(true)
   }, [events])
@@ -480,7 +494,7 @@ export default function CalendarPage() {
     }, 300)
   }, [])
 
-  const handleFormChange = useCallback((field: keyof FormState, value: string) => {
+  const handleFormChange = useCallback((field: keyof FormState, value: any) => {
     setForm((prev) => ({ ...prev, [field]: value }))
   }, [])
 
@@ -519,6 +533,11 @@ export default function CalendarPage() {
       const startDate = moment.tz(startStr, "America/Sao_Paulo").toDate()
       const endDate = moment.tz(endStr, "America/Sao_Paulo").toDate()
 
+      if (form.allDay) {
+        startDate.setHours(0, 0, 0, 0)
+        endDate.setHours(23, 59, 59, 999)
+      }
+
       if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) throw new Error("Datas inválidas")
       if (startDate >= endDate) throw new Error("O fim deve ser posterior ao início")
 
@@ -534,6 +553,7 @@ export default function CalendarPage() {
             title: title.trim(),
             start_time: startDate.toISOString(),
             end_time: endDate.toISOString(),
+            all_day: form.allDay
           })
           .eq("id", selectedEventId)
           .select()
@@ -545,7 +565,8 @@ export default function CalendarPage() {
             title: title.trim(), 
             start_time: startDate.toISOString(), 
             end_time: endDate.toISOString(), 
-            user_id: user.id 
+            user_id: user.id,
+            all_day: form.allDay
           })
           .select()
           .single())
@@ -625,7 +646,7 @@ export default function CalendarPage() {
     month: "Mês",
     week: "Semana",
     day: "Dia",
-    agenda: "Agenda",
+    agenda: "Resumo",
     date: "Data",
     time: "Hora",
     event: "Evento",
@@ -644,22 +665,21 @@ export default function CalendarPage() {
     <div className="h-screen flex flex-col bg-background overflow-hidden">
 
       {/* ── Header ── */}
-      <header className="flex-none flex items-center justify-between px-6 py-3 border-b border-border/40 bg-background/80 backdrop-blur-md">
+      <header className="flex-none grid grid-cols-3 items-center px-6 py-3 border-b border-border/40 bg-background/80 backdrop-blur-md">
 
         {/* Logo + label */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2.5">
-            <CalendarIcon className="w-4 h-4 text-primary" />
-            <span className="text-sm font-semibold tracking-tight capitalize">{calendarLabel}</span>
-            {isToday && (
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
-                Hoje
-              </span>
-            )}
-          </div>
+        <div className="flex items-center gap-2.5 justify-self-start min-w-0">
+          <CalendarIcon className="shrink-0 w-4 h-4 text-primary" />
+          <span className="text-sm font-semibold tracking-tight capitalize truncate">{calendarLabel}</span>
+          {isToday && (
+            <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+              Hoje
+            </span>
+          )}
+        </div>
 
-          <div className="h-4 w-px bg-border/50" />
-
+        {/* Centro: Navegação + Tabs */}
+        <div className="flex items-center gap-4 justify-self-center">
           {/* Navegação */}
           <div className="flex items-center gap-1">
             <button
@@ -684,16 +704,18 @@ export default function CalendarPage() {
             </div>
           </div>
 
+          <div className="h-4 w-px bg-border/50" />
+
           {/* Seletor de view */}
-          <div className="flex items-center bg-secondary/30 rounded-lg p-0.5 border border-border/30">
+          <div className="flex items-center bg-secondary/30 rounded-lg p-1">
             {VIEWS.map(({ key, label }) => (
               <button
                 key={key}
                 onClick={() => setCurrentView(key)}
                 className={`text-xs px-3 py-1.5 rounded-md transition-all font-medium cursor-pointer ${
                   currentView === key
-                    ? "bg-background text-foreground shadow-sm border border-border/30"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-foreground text-background"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
                 }`}
               >
                 {label}
@@ -703,7 +725,7 @@ export default function CalendarPage() {
         </div>
 
         {/* Ações direitas */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 justify-self-end">
           <button
             onClick={openNewEvent}
             className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
