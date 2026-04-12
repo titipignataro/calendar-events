@@ -160,3 +160,77 @@
   margin: 2px;
   text-decoration: none !important;
 }
+
+/* ─── Agenda View (Resumo) Overrides ───────────────────────────────────────── */
+.rbc-agenda-view {
+  border-radius: 8px !important;
+  border: 1px solid hsl(var(--border) / 0.4) !important;
+  overflow: hidden !important;
+  background-color: hsl(var(--background)) !important;
+}
+
+.rbc-agenda-view table.rbc-agenda-table {
+  border: none !important;
+}
+
+.rbc-agenda-view table.rbc-agenda-table thead > tr > th {
+  padding: 12px 16px !important;
+  text-align: left !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  color: hsl(var(--muted-foreground)) !important;
+  border-bottom: 1px solid hsl(var(--border) / 0.5) !important;
+  background: hsl(var(--secondary) / 0.2) !important;
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+}
+
+.rbc-agenda-view table.rbc-agenda-table tbody > tr > td {
+  padding: 12px 16px !important;
+  font-size: 0.85rem !important;
+  color: hsl(var(--foreground)) !important;
+  border-top: 1px solid hsl(var(--border) / 0.2) !important;
+  border-left: none !important;
+  border-right: none !important;
+  vertical-align: middle;
+}
+
+.rbc-agenda-date-cell {
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+.rbc-agenda-time-cell {
+  white-space: nowrap !important;
+  color: hsl(var(--muted-foreground)) !important;
+  font-size: 0.8rem !important;
+}
+
+.rbc-agenda-event-cell {
+  font-weight: 500 !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+.rbc-agenda-event-cell::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: hsl(var(--primary));
+  border-radius: 50%;
+  margin-right: 12px;
+  vertical-align: middle;
+}
+
+.rbc-agenda-empty {
+  padding: 3rem !important;
+  text-align: center !important;
+  color: hsl(var(--muted-foreground)) !important;
+  font-size: 0.9rem !important;
+  border: none !important;
+  background: transparent !important;
+}

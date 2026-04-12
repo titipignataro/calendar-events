@@ -6,28 +6,15 @@ import './globals.css'
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
-export const metadata: Metadata = {
-  title: 'Gerenciamento de Usuários',
-  description: 'Interface moderna para gerenciamento de usuários',
-  generator: 'v0.app',
-  icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
-  },
-}
+export const metadata: Metadata = { 
+   title: "Diária", 
+   description: "Diário de compromissos", 
+   icons: { 
+     icon: "/favicon.svg", 
+     shortcut: "/favicon.svg", 
+     apple: "/favicon.svg", 
+   }, 
+ } 
 
 import { ThemeProvider } from "@/components/theme-provider"
 

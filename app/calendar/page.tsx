@@ -14,6 +14,10 @@ import {
   User as UserIcon,
   Trash2,
   X,
+  List,
+  LayoutGrid,
+  Clock,
+  Pencil,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -54,6 +58,8 @@ type CalendarEvent = {
   start: Date
   end: Date
   allDay?: boolean
+  status: 'pending' | 'done'
+  color: string
 }
 
 type FormState = {
@@ -61,9 +67,26 @@ type FormState = {
   start: string
   end: string
   allDay: boolean
+  status: 'pending' | 'done'
+  color: string
 }
 
-const EMPTY_FORM: FormState = { title: "", start: "", end: "", allDay: false }
+const EMPTY_FORM: FormState = {
+  title: "",
+  start: "",
+  end: "",
+  allDay: false,
+  status: 'pending',
+  color: '#534AB7'
+}
+
+const EVENT_COLORS = [
+  { label: 'Roxo',   value: '#534AB7' },
+  { label: 'Verde',  value: '#0F6E56' },
+  { label: 'Coral',  value: '#993C1D' },
+  { label: 'Azul',   value: '#185FA5' },
+  { label: 'Âmbar',  value: '#854F0B' },
+]
 
 const VIEWS: { key: View; label: string }[] = [
   { key: "agenda", label: "Resumo" },
@@ -74,18 +97,30 @@ const VIEWS: { key: View; label: string }[] = [
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function mapDbEvent(item: any): CalendarEvent {
-  const start = new Date(item.start_time)
-  const end = new Date(item.end_time)
+type DbEvent = { 
+  id: string 
+  title: string 
+  start_time: string 
+  end_time: string 
+  all_day?: boolean 
+  status?: 'pending' | 'done' 
+  color?: string 
+} 
 
-  return {
-    id: item.id,
-    title: item.title,
-    start,
-    end,
-    allDay: item.all_day || false,
-  }
-}
+function mapDbEvent(item: DbEvent): CalendarEvent { 
+  return { 
+    id: item.id, 
+    title: item.title, 
+    start: moment.tz(item.start_time, "America/Sao_Paulo").toDate(), 
+    end:   moment.tz(item.end_time,   "America/Sao_Paulo").toDate(), 
+    allDay: item.all_day || false, 
+    status: item.status ?? 'pending', 
+    color:  item.color  ?? '#534AB7', 
+  } 
+} 
+
+const toLocal = (date: Date) => 
+  moment(date).tz("America/Sao_Paulo") 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function Spinner() {
@@ -316,6 +351,37 @@ function EventSlideOver({
                 {form.allDay ? "O evento durará o dia inteiro." : "Selecione o horário de término."}
               </p>
             </div>
+
+            {/* Cor */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Cor</Label>
+              <div className="flex gap-2">
+                {EVENT_COLORS.map(c => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => onChange("color", c.value)}
+                    className={`w-7 h-7 rounded-full border-2 transition-all ${
+                      form.color === c.value ? 'border-foreground scale-110' : 'border-transparent'
+                    }`}
+                    style={{ background: c.value }}
+                    title={c.label}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Status — só ao editar */}
+            {selectedEventId && (
+              <div className="flex items-center space-x-2 py-1">
+                <Checkbox
+                  id="status"
+                  checked={form.status === 'done'}
+                  onCheckedChange={(v) => onChange("status", v ? 'done' : 'pending')}
+                />
+                <Label htmlFor="status" className="text-sm cursor-pointer">Marcar como concluído</Label>
+              </div>
+            )}
           </div>
 
           {/* Rodapé do painel */}
@@ -355,7 +421,7 @@ const CustomEvent = ({ event }: { event: CalendarEvent }) => {
   let sub = ""
   if (event.allDay || diffH >= 24) {
     sub = diffDays > 1
-      ? `${format(event.start, "d/MM")} – ${format(event.end, "d/MM")}`
+      ? `${moment(event.start).format("D/MM")} – ${moment(event.end).format("D/MM")}`
       : "Dia inteiro"
   }
 
@@ -367,6 +433,293 @@ const CustomEvent = ({ event }: { event: CalendarEvent }) => {
   )
 }
 
+// ─── Hooks ────────────────────────────────────────────────────────────────────
+
+// Hook para persistir preferência de fonte 
+function useFontSize() { 
+  const STEPS = [85, 100, 115, 130] 
+  const [step, setStep] = useState(1) 
+
+  useEffect(() => { 
+    const stored = Number(localStorage.getItem('agenda-font-step') ?? 1) 
+    setStep(Math.min(Math.max(stored, 0), 3)) 
+  }, []) 
+
+  const changeFont = useCallback((d: number) => { 
+    setStep(prev => { 
+      const next = Math.min(Math.max(prev + d, 0), 3) 
+      localStorage.setItem('agenda-font-step', String(next)) 
+      return next 
+    }) 
+  }, []) 
+
+  return { scale: STEPS[step], fontLabel: `${STEPS[step]}%`, changeFont } 
+} 
+
+const EVENT_COLORS_MAP: Record<string, string> = { 
+  '#534AB7': '#EEEDFE', '#0F6E56': '#E1F5EE', 
+  '#993C1D': '#FAECE7', '#185FA5': '#E6F1FB', '#854F0B': '#FAEEDA', 
+} 
+
+function AgendaView({ 
+   events, 
+   currentDate, 
+   onSelectEvent, 
+   onToggleStatus, 
+   scale, 
+ }: { 
+   events: CalendarEvent[] 
+   currentDate: Date 
+   onSelectEvent: (e: CalendarEvent) => void 
+   onToggleStatus: (id: string) => void 
+   scale: number 
+ }) { 
+   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list') 
+ 
+   const todayStart    = moment().startOf("day") 
+   const tomorrowEnd   = moment().add(1, "day").endOf("day") 
+   const monthStart    = moment(currentDate).startOf("month") 
+   const monthEnd      = moment(currentDate).endOf("month") 
+ 
+   // Agrupa e separa em "hoje+amanhã" vs "próximos" 
+   const { nearGroups, futureGroups } = useMemo(() => { 
+     const filtered = events.filter(e => 
+       moment(e.start).isBefore(monthEnd) && 
+       moment(e.end).isAfter(monthStart) && 
+       moment(e.start).isSameOrAfter(todayStart) 
+     ) 
+ 
+     const map = new Map<string, CalendarEvent[]>() 
+     filtered.forEach(e => { 
+       const key = toLocal(e.start).format("YYYY-MM-DD") 
+       map.set(key, [...(map.get(key) ?? []), e]) 
+     }) 
+ 
+     const sorted = Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b)) 
+ 
+     const near:   typeof sorted = [] 
+     const future: typeof sorted = [] 
+ 
+     sorted.forEach(([dateKey, evs]) => { 
+       const d = moment(dateKey) 
+       if (d.isSameOrBefore(tomorrowEnd, 'day')) { 
+         near.push([dateKey, evs]) 
+       } else { 
+         future.push([dateKey, evs]) 
+       } 
+     }) 
+ 
+     return { nearGroups: near, futureGroups: future } 
+   }, [events, monthStart, monthEnd, todayStart, tomorrowEnd]) 
+ 
+   function duration(e: CalendarEvent) { 
+     if (e.allDay) return null 
+     const mins = Math.round((e.end.getTime() - e.start.getTime()) / 60000) 
+     if (mins < 60) return `${mins}min` 
+     const h = Math.floor(mins / 60), m = mins % 60 
+     return m > 0 ? `${h}h${m}` : `${h}h` 
+   } 
+ 
+   const totalNear   = nearGroups.reduce((acc, [, evs]) => acc + evs.length, 0) 
+   const totalFuture = futureGroups.reduce((acc, [, evs]) => acc + evs.length, 0) 
+ 
+   const isEmpty = nearGroups.length === 0 && futureGroups.length === 0 
+ 
+   function renderDayBlock( 
+     dateKey: string, 
+     dayEvents: CalendarEvent[], 
+     dimmed = false 
+   ) { 
+     const day     = moment(dateKey) 
+     const isToday = day.isSame(moment(), "day") 
+ 
+     return ( 
+       <div key={dateKey} className={`mb-5 ${dimmed ? "opacity-70" : ""}`}> 
+         {/* Cabeçalho do dia */} 
+         <div className="flex items-baseline gap-2.5 mb-2"> 
+           <span className={`font-medium leading-none ${ 
+             isToday ? "text-4xl text-primary" : "text-3xl text-foreground" 
+           }`}> 
+             {day.format("D")} 
+           </span> 
+           <span className="text-xs text-muted-foreground capitalize"> 
+             {day.format("dddd")} 
+           </span> 
+           <span className="text-[10px] text-muted-foreground bg-secondary/60 px-2 py-0.5 rounded-full border border-border/20"> 
+             {dayEvents.length} evento{dayEvents.length > 1 ? "s" : ""} 
+           </span> 
+         </div> 
+ 
+         {/* Lista */} 
+         {viewMode === "list" && ( 
+           <div className="flex flex-col"> 
+             {dayEvents.map(e => ( 
+               <div 
+                 key={e.id} 
+                 className="group flex items-center gap-3 px-2 py-2.5 rounded-lg hover:bg-secondary/30 transition-colors border-b border-border/[0.07] last:border-b-0 cursor-pointer" 
+                 onClick={() => onSelectEvent(e)} 
+               > 
+                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: e.color }} /> 
+                 <span className="text-xs text-muted-foreground min-w-[100px] shrink-0 tabular-nums"> 
+                   {e.allDay 
+                     ? "Dia inteiro" 
+                     : `${toLocal(e.start).format("HH:mm")} – ${toLocal(e.end).format("HH:mm")}`} 
+                 </span> 
+                 <span className={`text-sm font-medium flex-1 truncate ${ 
+                   e.status === "done" ? "line-through text-muted-foreground" : "" 
+                 }`}> 
+                   {e.title} 
+                 </span> 
+                 <div className="flex items-center gap-1.5 shrink-0"> 
+                   {duration(e) && ( 
+                     <span className="text-[11px] px-2 py-0.5 rounded-full border border-border/30 text-muted-foreground"> 
+                       {duration(e)} 
+                     </span> 
+                   )} 
+                   <button 
+                     onClick={ev => { ev.stopPropagation(); onToggleStatus(e.id) }} 
+                     className={`text-[11px] font-medium px-2.5 py-0.5 rounded-full border transition-colors ${ 
+                       e.status === "done" 
+                         ? "bg-[#EAF3DE] text-[#27500A] border-[#C0DD97]" 
+                         : "border-border/30 text-muted-foreground hover:border-border/60" 
+                     }`} 
+                   > 
+                     {e.status === "done" ? "Concluído" : "Pendente"} 
+                   </button> 
+                 </div> 
+               </div> 
+             ))} 
+           </div> 
+         )} 
+ 
+         {/* Grid */} 
+         {viewMode === "grid" && ( 
+           <div className={`grid gap-2.5 ${ 
+             dayEvents.length === 1 ? "grid-cols-1" : 
+             dayEvents.length === 2 ? "grid-cols-2" : "grid-cols-3" 
+           }`}> 
+             {dayEvents.map(e => ( 
+               <div 
+                 key={e.id} 
+                 onClick={() => onSelectEvent(e)} 
+                 className="relative bg-background border border-border/40 rounded-xl p-3 pl-4 cursor-pointer hover:border-border/70 transition-colors overflow-hidden" 
+               > 
+                 <div 
+                   className="absolute left-0 top-0 bottom-0 w-[3px]" 
+                   style={{ background: e.color, borderRadius: 0 }} 
+                 /> 
+                 <p className="text-[11px] text-muted-foreground mb-1 tabular-nums"> 
+                   {e.allDay 
+                     ? "Dia inteiro" 
+                     : `${toLocal(e.start).format("HH:mm")} – ${toLocal(e.end).format("HH:mm")}`} 
+                 </p> 
+                 <p className={`text-sm font-medium mb-2 truncate ${ 
+                   e.status === "done" ? "line-through text-muted-foreground" : "" 
+                 }`}> 
+                   {e.title} 
+                 </p> 
+                 <div className="flex flex-wrap gap-1.5"> 
+                   {duration(e) && ( 
+                     <span className="text-[11px] px-2 py-0.5 rounded-full border border-border/30 text-muted-foreground"> 
+                       {duration(e)} 
+                     </span> 
+                   )} 
+                   <button 
+                     onClick={ev => { ev.stopPropagation(); onToggleStatus(e.id) }} 
+                     className={`text-[11px] font-medium px-2.5 py-0.5 rounded-full border transition-colors ${ 
+                       e.status === "done" 
+                         ? "bg-[#EAF3DE] text-[#27500A] border-[#C0DD97]" 
+                         : "border-border/30 text-muted-foreground hover:border-border/60" 
+                     }`} 
+                   > 
+                     {e.status === "done" ? "Concluído" : "Pendente"} 
+                   </button> 
+                 </div> 
+               </div> 
+             ))} 
+           </div> 
+         )} 
+       </div> 
+     ) 
+   } 
+ 
+   return ( 
+     <div className="h-full overflow-y-auto" style={{ zoom: scale / 100 }}> 
+ 
+       {/* ── Subcabeçalho sticky ── */} 
+       <div className="sticky top-0 z-10 bg-background border-b border-border/30 flex items-center justify-between px-5 py-3"> 
+         <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60"> 
+           Resumo mensal
+         </p>
+         <div className="flex items-center bg-secondary/40 rounded-lg p-1 gap-1"> 
+           {(["list", "grid"] as const).map(v => ( 
+             <button 
+               key={v} 
+               onClick={() => setViewMode(v)} 
+               className={`p-1.5 rounded-md transition-all cursor-pointer ${ 
+                 viewMode === v 
+                   ? "bg-background text-foreground border border-border/30" 
+                   : "text-muted-foreground hover:text-foreground" 
+               }`} 
+             > 
+               {v === "list" 
+                 ? <List className="w-3.5 h-3.5" /> 
+                 : <LayoutGrid className="w-3.5 h-3.5" />} 
+             </button> 
+           ))} 
+         </div> 
+       </div> 
+ 
+       {isEmpty ? ( 
+         <div className="flex flex-col items-center justify-center h-[calc(100%-48px)] text-muted-foreground gap-2"> 
+           <CalendarIcon className="w-8 h-8 opacity-30" /> 
+           <p className="text-sm">Nenhum evento a partir de hoje</p> 
+         </div> 
+       ) : ( 
+         <div className="px-5 py-4 space-y-1"> 
+ 
+           {/* ── Seção: Hoje & amanhã ── */} 
+           {nearGroups.length > 0 && ( 
+             <> 
+               <div className="bg-background flex items-center gap-3 py-3"> 
+                 <span className="text-[10px] font-bold uppercase tracking-widest text-primary whitespace-nowrap"> 
+                   Hoje &amp; amanhã 
+                 </span> 
+                 <div className="flex-1 h-px bg-primary/20" /> 
+                 <span className="text-[10px] text-muted-foreground whitespace-nowrap"> 
+                   {totalNear} evento{totalNear !== 1 ? "s" : ""} 
+                 </span> 
+               </div> 
+               {nearGroups.map(([dateKey, dayEvents]) => 
+                 renderDayBlock(dateKey, dayEvents, false) 
+               )} 
+             </> 
+           )} 
+ 
+           {/* ── Seção: Próximos dias ── */} 
+           {futureGroups.length > 0 && ( 
+             <> 
+               <div className="bg-background flex items-center gap-3 pt-5 pb-3"> 
+                 <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap"> 
+                   Próximos dias 
+                 </span> 
+                 <div className="flex-1 h-px bg-border/50" /> 
+                 <span className="text-[10px] text-muted-foreground whitespace-nowrap"> 
+                   {totalFuture} evento{totalFuture !== 1 ? "s" : ""} 
+                 </span> 
+               </div> 
+               {futureGroups.map(([dateKey, dayEvents]) => 
+                 renderDayBlock(dateKey, dayEvents, true) 
+               )} 
+             </> 
+           )} 
+ 
+         </div> 
+       )} 
+     </div> 
+   ) 
+ }
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CalendarPage() {
@@ -374,7 +727,7 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true)
   const [events, setEvents] = useState<CalendarEvent[]>([])
 
-  
+  const { scale, fontLabel, changeFont } = useFontSize()
 
   // Slide-over
   const [panelOpen, setPanelOpen] = useState(false)
@@ -396,15 +749,19 @@ export default function CalendarPage() {
   )
 }
 
-   const displayEvents = useMemo(() => {
-  if (currentView !== "month") return events
-
-  return events.map((e) => ({
-    ...e,
-    start: toSafeDate(e.start),
-    end: toSafeDate(e.end),
-  }))
-}, [events, currentView])
+   const displayEvents = useMemo(() => { 
+  if (currentView !== "month") return events 
+ 
+  return events.map(e => { 
+    if (e.allDay) return e 
+ 
+    return { 
+      ...e, 
+      start: toSafeDate(e.start), 
+      end: toSafeDate(e.end), 
+    } 
+  }) 
+ }, [events, currentView]) 
 
   // Usuário
   const { theme, setTheme } = useTheme()
@@ -413,13 +770,19 @@ export default function CalendarPage() {
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
   const fetchEvents = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    const { data: { session }, error: authError } = await supabase.auth.getSession()
+    if (authError || !session) {
+      if (authError) {
+        await supabase.auth.signOut()
+        router.push("/login")
+      }
+      return
+    }
 
     const { data, error } = await supabase
       .from("events")
       .select("*")
-      .eq("user_id", user.id)
+      .eq("user_id", session.user.id)
       .order("start_time", { ascending: true })
 
     if (error) {
@@ -428,7 +791,7 @@ export default function CalendarPage() {
     }
 
     setEvents(data.map(mapDbEvent))
-  }, [])
+  }, [router])
 
   useEffect(() => {
     let mounted = true
@@ -481,6 +844,8 @@ export default function CalendarPage() {
       start: moment(originalEvent.start).format("YYYY-MM-DDTHH:mm"),
       end: moment(originalEvent.end).format("YYYY-MM-DDTHH:mm"),
       allDay: originalEvent.allDay || false,
+      status: originalEvent.status,
+      color: originalEvent.color,
     })
     setPanelOpen(true)
   }, [events])
@@ -494,14 +859,41 @@ export default function CalendarPage() {
     }, 300)
   }, [])
 
-  const handleFormChange = useCallback((field: keyof FormState, value: any) => {
-    setForm((prev) => ({ ...prev, [field]: value }))
-  }, [])
+  const handleFormChange = useCallback( 
+    <K extends keyof FormState>(field: K, value: FormState[K]) => { 
+      setForm(prev => ({ ...prev, [field]: value })) 
+    }, 
+    [] 
+  ) 
 
   const handleLogout = useCallback(async () => {
     setLoading(true)
     await supabase.auth.signOut()
   }, [])
+
+  const handleToggleStatus = useCallback(async (id: string) => { 
+    setEvents(prev => { 
+      const event = prev.find(e => e.id === id) 
+      if (!event) return prev 
+  
+      const newStatus = event.status === 'done' ? 'pending' : 'done' 
+  
+      // atualização otimista 
+      supabase 
+        .from("events") 
+        .update({ status: newStatus }) 
+        .eq("id", id) 
+        .then(({ error }) => { 
+          if (error) { 
+            toast.error("Erro ao atualizar status") 
+          } 
+        }) 
+  
+      return prev.map(e => 
+        e.id === id ? { ...e, status: newStatus } : e 
+      ) 
+    }) 
+  }, []) 
 
   const handleDeleteEvent = useCallback(async () => {
     if (!selectedEventId) return
@@ -541,8 +933,9 @@ export default function CalendarPage() {
       if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) throw new Error("Datas inválidas")
       if (startDate >= endDate) throw new Error("O fim deve ser posterior ao início")
 
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) throw new Error("Usuário não autenticado")
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError || !session?.user) throw new Error("Usuário não autenticado")
+      const user = session.user
 
       let result: any, err: any
 
@@ -551,9 +944,11 @@ export default function CalendarPage() {
           .from("events")
           .update({
             title: title.trim(),
-            start_time: startDate.toISOString(),
-            end_time: endDate.toISOString(),
-            all_day: form.allDay
+            start_time: moment(startDate).toISOString(),
+            end_time: moment(endDate).toISOString(),
+            all_day: form.allDay,
+            status: form.status,
+            color: form.color
           })
           .eq("id", selectedEventId)
           .select()
@@ -563,10 +958,12 @@ export default function CalendarPage() {
           .from("events")
           .insert({ 
             title: title.trim(), 
-            start_time: startDate.toISOString(), 
-            end_time: endDate.toISOString(), 
+            start_time: moment(startDate).toISOString(), 
+            end_time: moment(endDate).toISOString(), 
             user_id: user.id,
-            all_day: form.allDay
+            all_day: form.allDay,
+            status: form.status,
+            color: form.color
           })
           .select()
           .single())
@@ -617,16 +1014,17 @@ export default function CalendarPage() {
   // ── Memo ───────────────────────────────────────────────────────────────────
  
   const eventPropGetter = useCallback((event: CalendarEvent) => {
-    if (event.allDay) {
-      return {
-        style: { backgroundColor: "hsl(var(--primary))", borderColor: "transparent" },
-      }
+    return {
+      style: { backgroundColor: event.color, borderColor: "transparent" },
     }
-    return {}
   }, [])
  
   const isToday = moment(currentDate).isSame(moment(), 'day')
  
+  const todayCount = useMemo(() =>
+    events.filter(e => moment(e.start).isSame(moment(), 'day')).length
+  , [events])
+
   const calendarLabel = useMemo(() => {
     const m = moment(currentDate)
     if (currentView === "day") return m.format("dddd, D [de] MMMM")
@@ -667,16 +1065,37 @@ export default function CalendarPage() {
       {/* ── Header ── */}
       <header className="flex-none grid grid-cols-3 items-center px-6 py-3 border-b border-border/40 bg-background/80 backdrop-blur-md">
 
-        {/* Logo + label */}
-        <div className="flex items-center gap-2.5 justify-self-start min-w-0">
-          <CalendarIcon className="shrink-0 w-4 h-4 text-primary" />
-          <span className="text-sm font-semibold tracking-tight capitalize truncate">{calendarLabel}</span>
-          {isToday && (
-            <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
-              Hoje
-            </span>
-          )}
-        </div>
+        {/* Logo + label */} 
+        <div className="flex items-center gap-2.5 justify-self-start min-w-0"> 
+ 
+          {/* Ícone da Diária */} 
+          <svg width="20" height="20" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0"> 
+            <rect width="32" height="32" rx="8" fill="#534AB7"/> 
+            <rect x="8" y="10" width="16" height="14" rx="2.5" fill="none" stroke="white" strokeWidth="1.5"/> 
+            <line x1="8" y1="14.5" x2="24" y2="14.5" stroke="white" strokeWidth="1.5"/> 
+            <line x1="12" y1="8" x2="12" y2="12" stroke="white" strokeWidth="1.5" strokeLinecap="round"/> 
+            <line x1="20" y1="8" x2="20" y2="12" stroke="white" strokeWidth="1.5" strokeLinecap="round"/> 
+            <rect x="11.5" y="17.5" width="3" height="3" rx="0.75" fill="white"/> 
+            <rect x="17.5" y="17.5" width="3" height="3" rx="0.75" fill="white" opacity="0.5"/> 
+          </svg> 
+ 
+          {/* Nome fixo + label de mês */} 
+          <span className="text-sm font-semibold tracking-tight text-foreground">Diária</span> 
+          <span className="text-sm font-normal text-muted-foreground capitalize truncate hidden sm:block"> 
+            {calendarLabel} 
+          </span> 
+ 
+          {isToday && ( 
+            <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary"> 
+              Hoje 
+            </span> 
+          )} 
+          {todayCount > 0 && ( 
+            <span className="shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary text-primary-foreground"> 
+              {todayCount} 
+            </span> 
+          )} 
+        </div> 
 
         {/* Centro: Navegação + Tabs */}
         <div className="flex items-center gap-4 justify-self-center">
@@ -740,7 +1159,7 @@ export default function CalendarPage() {
                 <UserIcon className="w-3.5 h-3.5" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52 rounded-xl mt-2">
+            <DropdownMenuContent align="end" className="w-56 rounded-xl mt-2">
               <DropdownMenuLabel className="font-normal py-2">
                 <p className="text-xs font-medium">Conta</p>
                 <p className="text-xs text-muted-foreground truncate mt-0.5">{userEmail}</p>
@@ -753,6 +1172,28 @@ export default function CalendarPage() {
                 {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
                 {theme === "dark" ? "Modo claro" : "Modo escuro"}
               </DropdownMenuItem>
+
+              <DropdownMenuItem asChild> 
+                <div className="flex items-center justify-between px-2 py-1.5 cursor-default select-none"> 
+                  <span className="text-sm text-muted-foreground">Tamanho do texto</span> 
+                  <div className="flex items-center gap-1"> 
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); changeFont(-1) }} 
+                      className="w-6 h-6 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-all cursor-pointer flex items-center justify-center" 
+                    > 
+                      A<sup className="text-[7px]">−</sup> 
+                    </button> 
+                    <span className="text-xs text-muted-foreground min-w-[32px] text-center">{fontLabel}</span> 
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); changeFont(1) }} 
+                      className="w-6 h-6 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-all cursor-pointer flex items-center justify-center" 
+                    > 
+                      A<sup className="text-[7px]">+</sup> 
+                    </button> 
+                  </div> 
+                </div> 
+              </DropdownMenuItem> 
+
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={handleLogout}
@@ -769,22 +1210,32 @@ export default function CalendarPage() {
       {/* ── Calendário ── */}
       <main className="flex-1 min-h-0 p-4">
         <div className="h-full rounded-xl border border-border/40 overflow-hidden bg-background">
-          <Calendar
-            localizer={localizer}
-            events={displayEvents}
-            startAccessor="start"
-            endAccessor="end"
-            culture="pt-br"
-            view={currentView}
-            date={currentDate}
-            onView={setCurrentView}
-            onNavigate={setCurrentDate}
-            onSelectEvent={openEditEvent}
-            eventPropGetter={eventPropGetter}
-            components={calendarComponents}
-            messages={calendarMessages}
-            className="custom-calendar-theme h-full"
-          />
+          {currentView === "agenda" ? (
+            <AgendaView
+              events={events}
+              currentDate={currentDate}
+              onSelectEvent={openEditEvent}
+              onToggleStatus={handleToggleStatus}
+              scale={scale}
+            />
+          ) : (
+            <Calendar
+              localizer={localizer}
+              events={displayEvents}
+              startAccessor="start"
+              endAccessor="end"
+              culture="pt-br"
+              view={currentView}
+              date={currentDate}
+              onView={setCurrentView}
+              onNavigate={setCurrentDate}
+              onSelectEvent={openEditEvent}
+              eventPropGetter={eventPropGetter}
+              components={calendarComponents}
+              messages={calendarMessages}
+              className="custom-calendar-theme h-full"
+            />
+          )}
         </div>
       </main>
 
